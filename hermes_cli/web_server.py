@@ -365,21 +365,22 @@ def should_require_auth(host: str, allow_public: bool = False) -> bool:
     """Return True iff the dashboard auth gate must be active.
 
     Truth table:
-      host == loopback        → False (no auth — local-only, trusted operator)
-      host != loopback        → True  (gate engages — OAuth or password required)
+      host == loopback                    → False (no auth — local-only)
+      HERMES_DASHBOARD_INSECURE=1 set     → False (operator opt-out, e.g. Tailscale)
+      host != loopback                    → True  (gate engages)
 
     "Loopback" is 127.0.0.1, localhost, ::1. RFC1918 / CGNAT / link-local are
     deliberately treated as PUBLIC — a hostile device on the same LAN is exactly
     the threat model the gate is designed for.
 
-    ``allow_public`` (the legacy ``--insecure`` escape hatch) NO LONGER disables
-    the gate. It is accepted for backward-compat with old launch scripts and
-    desktop shells but is ignored: a non-loopback bind ALWAYS requires an auth
-    provider (OAuth or the bundled password provider). This closes the
-    unauthenticated-public-dashboard hole behind the June 2026 ``hermes-0day``
-    MCP-persistence campaign, where ``--insecure --host 0.0.0.0`` left the
-    config/MCP/agent surface open to internet scanners.
+    ``HERMES_DASHBOARD_INSECURE=1`` restores the pre-hardening bypass for
+    operators who handle network isolation at a lower layer (e.g. Docker port
+    mapping restricted to a Tailscale IP). Set it only when the bind address is
+    already protected by the surrounding network (VPN, firewall, etc.).
     """
+    import os
+    if os.environ.get("HERMES_DASHBOARD_INSECURE", "") in ("1", "true", "yes"):
+        return False
     return host not in _LOOPBACK_HOST_VALUES
 
 
@@ -12866,13 +12867,12 @@ def start_server(
     # the hermes-0day MCP-persistence campaign abused unauthenticated public
     # dashboards). If a caller still passes it, warn that it is now a no-op
     # rather than silently changing their expectation of an open bind.
-    if allow_public and host not in _LOOPBACK_HOST_VALUES:
+    if allow_public and host not in _LOOPBACK_HOST_VALUES and app.state.auth_required:
         _log.warning(
-            "--insecure no longer bypasses dashboard authentication. A "
-            "non-loopback bind (%s) now ALWAYS requires an auth provider "
-            "(OAuth or the bundled password provider). Configure one — see "
-            "below — or bind to 127.0.0.1 and reach it over an SSH tunnel / "
-            "Tailscale.", host,
+            "--insecure flag detected but HERMES_DASHBOARD_INSECURE env var is "
+            "not set. To disable the auth gate, set HERMES_DASHBOARD_INSECURE=1 "
+            "in your environment (use only when network access is restricted, "
+            "e.g. via Tailscale or Docker port mapping).",
         )
 
     if app.state.auth_required:
