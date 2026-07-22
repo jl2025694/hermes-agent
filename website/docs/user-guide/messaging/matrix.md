@@ -63,6 +63,7 @@ matrix:
     - "!abc123:matrix.org"
   auto_thread: true               # Auto-create threads for responses (default: true)
   dm_mention_threads: false       # Create thread when @mentioned in DM (default: false)
+  max_message_length: 16000       # Outbound chunk size in chars (default: 16000, max: 65535)
 ```
 
 Or via environment variables:
